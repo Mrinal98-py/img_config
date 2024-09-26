@@ -1,0 +1,88 @@
+pip install tensorflow numpy opencv-python
+
+##--
+
+def build_edge_detection_model(input_shape=(256, 256, 1)):
+    inputs = tf.keras.Input(input_shape)
+    
+    # Simple edge detection model
+    x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Conv2D(1, (3, 3), activation='sigmoid', padding='same')(x)
+    
+    return models.Model(inputs, x)
+
+edge_detection_model = build_edge_detection_model()
+edge_detection_model.compile(optimizer='adam', loss='binary_crossentropy')
+
+##--
+
+def build_edge_guided_inpainting_model(input_shape=(256, 256, 3)):
+    inputs = tf.keras.Input(input_shape)
+    
+    # Encoder
+    x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    x = layers.Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = layers.MaxPooling2D((2, 2), padding='same')(x)
+    
+    # Bottleneck
+    x = layers.Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    
+    # Decoder
+    x = layers.Conv2DTranspose(128, (3, 3), activation='relu', padding='same')(x)
+    x = layers.UpSampling2D((2, 2))(x)
+    x = layers.Conv2DTranspose(64, (3, 3), activation='relu', padding='same')(x)
+    x = layers.UpSampling2D((2, 2))(x)
+    
+    outputs = layers.Conv2D(3, (3, 3), activation='sigmoid', padding='same')(x)
+    
+    return models.Model(inputs, outputs)
+
+edge_guided_inpainting_model = build_edge_guided_inpainting_model()
+edge_guided_inpainting_model.compile(optimizer='adam', loss='binary_crossentropy')
+
+
+##--
+
+# Example dummy training data
+X_train = np.random.rand(100, 256, 256, 3)  # Replace with your training data
+edges_train = np.random.rand(100, 256, 256, 1)  # Replace with your training data
+
+# Train the edge detection model
+edge_detection_model.fit(X_train, edges_train, epochs=50, batch_size=8)
+
+# Train the edge-guided inpainting model
+edge_guided_inpainting_model.fit(X_train, X_train, epochs=50, batch_size=8)
+
+# Use the trained models to fix broken images
+def fix_broken_image(edge_detection_model, edge_guided_inpainting_model, image_path, output_path):
+    image = cv2.imread(image_path)
+    image_resized = cv2.resize(image, (256, 256))
+    image_normalized = image_resized / 255.0
+    image_input = np.expand_dims(image_normalized, axis=0)
+    
+    # Edge detection
+    edges = edge_detection_model.predict(image_input)[0]
+    
+    # Image inpainting guided by edges
+    fixed_image = edge_guided_inpainting_model.predict(np.concatenate([image_input, np.expand_dims(edges, axis=-1)], axis=-1))[0]
+    fixed_image = (fixed_image * 255).astype(np.uint8)
+    fixed_image_resized = cv2.resize(fixed_image, (image.shape[1], image.shape[0]))
+    
+    cv2.imwrite(output_path, fixed_image_resized)
+    cv2.imshow('Fixed Image', fixed_image_resized)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Path to the broken image
+broken_image_path = 'path_to_broken_image.png'
+output_image_path = 'path_to_fixed_image.png'
+
+# Fix the broken image using EdgeConnect
+fix_broken_image(edge_detection_model, edge_guided_inpainting_model, broken_image_path, output_image_path)
+
+
+##--
