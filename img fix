@@ -1,0 +1,104 @@
+##Increase rev
+
+import cv2
+
+# Load the image
+image = cv2.imread('input_image.jpg')
+
+# Create a super resolution object
+sr = cv2.dnn_superres.DnnSuperResImpl_create()
+
+# Read the model
+path = "EDSR_x3.pb"  # You can download models from https://github.com/opencv/opencv_contrib
+sr.readModel(path)
+
+# Set the model and scale
+sr.setModel("edsr", 3)  # 'edsr' is the model name and 3 is the scaling factor
+
+# Upscale the image
+result = sr.upsample(image)
+
+# Save the image
+cv2.imwrite('output_image.jpg', result)
+
+# reduce noise 
+
+import cv2
+
+# Load the image
+image = cv2.imread('input_image.jpg')
+
+# Apply fastNlMeansDenoisingColored
+denoised_image = cv2.fastNlMeansDenoisingColored(image, None, 10, 10, 7, 21)
+
+# Save the denoised image
+cv2.imwrite('denoised_image.jpg', denoised_image)
+
+#sharpness 
+
+from PIL import Image, ImageEnhance
+
+# Load the image
+image = Image.open('input_image.jpg')
+
+# Enhance sharpness
+enhancer = ImageEnhance.Sharpness(image)
+sharpened_image = enhancer.enhance(2.0)  # The factor of 2.0 increases sharpness
+
+# Save the enhanced image
+sharpened_image.save('sharpened_image.jpg')
+
+
+##
+
+from skimage import exposure, io
+import matplotlib.pyplot as plt
+
+# Load the image
+image = io.imread('input_image.jpg')
+
+# Apply histogram equalization
+equalized_image = exposure.equalize_hist(image)
+
+# Save the image
+io.imsave('equalized_image.jpg', (equalized_image * 255).astype('uint8'))
+
+# Optionally, display the image
+plt.imshow(equalized_image, cmap='gray')
+plt.show()
+
+## reduce noise with local mean
+
+from skimage import io, restoration
+import matplotlib.pyplot as plt
+
+# Load the image
+image = io.imread('input_image.jpg')
+
+# Apply non-local means denoising
+denoised_image = restoration.denoise_nl_means(image, h=1.15)
+
+# Save the image
+io.imsave('denoised_image.jpg', (denoised_image * 255).astype('uint8'))
+
+# Optionally, display the image
+plt.imshow(denoised_image)
+plt.show()
+
+## histogram equalizor
+
+from skimage import exposure, io
+import matplotlib.pyplot as plt
+
+# Load the image
+image = io.imread('input_image.jpg')
+
+# Apply histogram equalization
+equalized_image = exposure.equalize_hist(image)
+
+# Save the image
+io.imsave('equalized_image.jpg', (equalized_image * 255).astype('uint8'))
+
+# Optionally, display the image
+plt.imshow(equalized_image, cmap='gray')
+plt.show()
