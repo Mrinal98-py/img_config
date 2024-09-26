@@ -1,0 +1,91 @@
+pip install tensorflow numpy opencv-python
+
+##--
+
+import tensorflow as tf
+from tensorflow.keras import layers
+
+class PartialConv(layers.Layer):
+    def __init__(self, filters, kernel_size, **kwargs):
+        super(PartialConv, self).__init__(**kwargs)
+        self.filters = filters
+        self.kernel_size = kernel_size
+        self.conv = layers.Conv2D(filters, kernel_size, padding='same', use_bias=False)
+        self.mask_conv = layers.Conv2D(filters, kernel_size, padding='same', use_bias=False)
+        self.mask_conv.trainable = False
+
+    def call(self, inputs, mask):
+        conv_out = self.conv(inputs * mask)
+        mask_out = self.mask_conv(mask)
+        
+        with tf.control_dependencies([tf.assert_greater(mask_out, 0.0)]):
+            mask_out = tf.clip_by_value(mask_out, 1e-8, tf.reduce_max(mask_out))
+
+        output = conv_out / mask_out
+        new_mask = tf.where(mask > 0, tf.ones_like(mask), tf.zeros_like(mask))
+        return output, new_mask
+
+def build_partial_conv_autoencoder(input_shape=(256, 256, 3)):
+    inputs = tf.keras.Input(input_shape)
+    mask = tf.keras.Input(input_shape)
+    
+    # Encoder with Partial Convolution
+    x, mask = PartialConv(64, 3)(inputs, mask)
+    x = layers.LeakyReLU()(x)
+    x, mask = PartialConv(128, 3)(x, mask)
+    x = layers.LeakyReLU()(x)
+    
+    # Bottleneck with Partial Convolution
+    x, mask = PartialConv(256, 3)(x, mask)
+    
+    # Decoder with Partial Convolution
+    x, mask = PartialConv(128, 3)(x, mask)
+    x = layers.LeakyReLU()(x)
+    x, mask = PartialConv(64, 3)(x, mask)
+    x = layers.LeakyReLU()(x)
+    
+    outputs, _ = PartialConv(3, 3)(x, mask)
+    outputs = layers.Activation('sigmoid')(outputs)
+    
+    return models.Model([inputs, mask], outputs)
+
+# Compile the model
+partial_conv_autoencoder = build_partial_conv_autoencoder()
+partial_conv_autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
+
+# Example dummy training data
+X_train = np.random.rand(100, 256, 256, 3)  # Replace with your training data
+masks = np.random.randint(0, 2, (100, 256, 256, 3))  # Replace with your training data
+
+# Train the autoencoder
+partial_conv_autoencoder.fit([X_train, masks], X_train, epochs=50, batch_size=8)
+
+# Use the trained autoencoder to fix broken images
+def fix_broken_image(partial_conv_autoencoder, image_path, mask_path, output_path):
+    image = cv2.imread(image_path)
+    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+    mask = cv2.resize(mask, (256, 256))
+    mask = np.expand_dims(mask, axis=-1)
+    mask = mask / 255.0
+    
+    image_resized = cv2.resize(image, (256, 256))
+    image_normalized = image_resized / 255.0
+    image_input = np.expand_dims(image_normalized, axis=0)
+    mask_input = np.expand_dims(mask, axis=0)
+    
+    fixed_image = partial_conv_autoencoder.predict([image_input, mask_input])[0]
+    fixed_image = (fixed_image * 255).astype(np.uint8)
+    fixed_image_resized = cv2.resize(fixed_image, (image.shape[1], image.shape[0]))
+    
+    cv2.imwrite(output_path, fixed_image_resized)
+    cv2.imshow('Fixed Image', fixed_image_resized)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Path to the broken image and mask
+broken_image_path = 'path_to_broken_image.png'
+mask_image_path = 'path_to_mask_image.png'
+output_image_path = 'path_to_fixed_image.png'
+
+# Fix the broken image using the autoencoder
+fix_broken_image(partial_conv_autoencoder, broken_image_path, mask_image_path, output_image_path)
