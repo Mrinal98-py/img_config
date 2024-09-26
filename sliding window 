@@ -1,0 +1,91 @@
+import numpy as np
+import cv2
+from keras.applications.vgg16 import VGG16, preprocess_input, decode_predictions
+from keras.preprocessing.image import img_to_array
+
+# Load the pre-trained VGG16 model
+model = VGG16(weights="imagenet")
+
+def sliding_window(image, step_size, window_size):
+    # Slide a window across the image
+    for y in range(0, image.shape[0] - window_size[1], step_size):
+        for x in range(0, image.shape[1] - window_size[0], step_size):
+            yield (x, y, image[y:y + window_size[1], x:x + window_size[0]])
+
+def classify_window(window, model):
+    # Preprocess the window for the model
+    window = cv2.resize(window, (224, 224))  # VGG16 expects 224x224 input size
+    window = img_to_array(window)
+    window = np.expand_dims(window, axis=0)
+    window = preprocess_input(window)
+    
+    # Classify the window using the model
+    preds = model.predict(window)
+    return decode_predictions(preds, top=1)[0]
+
+# Load an image
+image = cv2.imread("example.jpg")
+window_size = (128, 128)  # Define the size of the sliding window
+step_size = 32  # Define the step size
+
+# Iterate over the sliding window
+for (x, y, window) in sliding_window(image, step_size, window_size):
+    if window.shape[0] != window_size[1] or window.shape[1] != window_size[0]:
+        continue  # Ignore partial windows
+
+    # Classify the content of the window
+    label = classify_window(window, model)
+    print(f"Window at ({x}, {y}) classified as: {label}")
+
+    # Draw the window on the image
+    clone = image.copy()
+    cv2.rectangle(clone, (x, y), (x + window_size[0],
+
+###---
+ ## img correction 
+import cv2
+import numpy as np
+
+def sliding_window(image, step_size, window_size):
+    # Slide a window across the image
+    for y in range(0, image.shape[0] - window_size[1], step_size):
+        for x in range(0, image.shape[1] - window_size[0], step_size):
+            yield (x, y, image[y:y + window_size[1], x:x + window_size[0]])
+
+def denoise_window(window):
+    # Apply a denoising filter to the window
+    return cv2.fastNlMeansDenoisingColored(window, None, 10, 10, 7, 21)
+
+def reconstruct_image(image, step_size, window_size):
+    # Create an empty array for the reconstructed image
+    reconstructed = np.zeros_like(image)
+    count = np.zeros_like(image, dtype=np.float32)
+
+    for (x, y, window) in sliding_window(image, step_size, window_size):
+        if window.shape[0] != window_size[1] or window.shape[1] != window_size[0]:
+            continue  # Ignore partial windows
+
+        # Apply the denoising operation to the window
+        corrected_window = denoise_window(window)
+
+        # Place the corrected window back into the reconstructed image
+        reconstructed[y:y + window_size[1], x:x + window_size[0]] += corrected_window
+        count[y:y + window_size[1], x:x + window_size[0]] += 1
+
+    # Normalize the reconstructed image by the count
+    reconstructed /= count
+    return reconstructed.astype(np.uint8)
+
+# Load a noisy image
+image = cv2.imread("noisy_image.jpg")
+window_size = (64, 64)  # Define the size of the sliding window
+step_size = 32  # Define the step size
+
+# Reconstruct the image using sliding window denoising
+corrected_image = reconstruct_image(image, step_size, window_size)
+
+# Display the original and corrected images
+cv2.imshow("Original Image", image)
+cv2.imshow("Corrected Image", corrected_image)
+cv2.waitKey(0)
+cv2.destroyAllWindows()
