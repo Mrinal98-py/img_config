@@ -1,0 +1,172 @@
+pip install tensorflow numpy opencv-python
+
+##--
+import tensorflow as tf
+from tensorflow.keras import layers, models
+
+def build_autoencoder(input_shape=(256, 256, 3)):
+    inputs = tf.keras.Input(input_shape)
+
+    # Encoder
+    conv1 = layers.Conv2D(64, kernel_size=3, strides=2, padding='same', activation='relu')(inputs)
+    conv2 = layers.Conv2D(128, kernel_size=3, strides=2, padding='same', activation='relu')(conv1)
+    conv3 = layers.Conv2D(256, kernel_size=3, strides=2, padding='same', activation='relu')(conv2)
+
+    # Bottleneck
+    bottleneck = layers.Conv2D(512, kernel_size=3, strides=2, padding='same', activation='relu')(conv3)
+
+    # Decoder
+    deconv1 = layers.Conv2DTranspose(256, kernel_size=3, strides=2, padding='same', activation='relu')(bottleneck)
+    deconv2 = layers.Conv2DTranspose(128, kernel_size=3, strides=2, padding='same', activation='relu')(deconv1)
+    deconv3 = layers.Conv2DTranspose(64, kernel_size=3, strides=2, padding='same', activation='relu')(deconv2)
+    outputs = layers.Conv2DTranspose(3, kernel_size=3, strides=2, padding='same', activation='sigmoid')(deconv3)
+
+    return models.Model(inputs, outputs)
+
+# Define the model
+autoencoder = build_autoencoder()
+autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
+
+# Example usage with a dummy dataset
+# Note: For real usage, replace this with actual data loading and preprocessing
+import numpy as np
+
+# Dummy dataset
+X_train = np.random.rand(100, 256, 256, 3)
+y_train = X_train.copy()  # Autoencoder target is the same as input
+
+# Train the model
+autoencoder.fit(X_train, y_train, epochs=50, batch_size=8)
+
+# Use the trained model to fix broken images
+def fix_broken_image(autoencoder, image_path, output_path):
+    image = cv2.imread(image_path)
+    image_resized = cv2.resize(image, (256, 256))
+    image_normalized = image_resized / 255.0
+    image_input = np.expand_dims(image_normalized, axis=0)
+
+    fixed_image = autoencoder.predict(image_input)[0]
+    fixed_image = (fixed_image * 255).astype(np.uint8)
+    fixed_image_resized = cv2.resize(fixed_image, (image.shape[1], image.shape[0]))
+
+    cv2.imwrite(output_path, fixed_image_resized)
+    cv2.imshow('Fixed Image', fixed_image_resized)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Path to the broken image
+broken_image_path = 'path_to_broken_image.png'
+output_image_path = 'path_to_fixed_image.png'
+
+# Fix the broken image
+fix_broken_image(autoencoder, broken_image_path, output_image_path)
+
+##--
+
+pip install tensorflow numpy opencv-python
+ ##--
+
+import tensorflow as tf
+from tensorflow.keras import layers, models, backend as K
+
+class PartialConv(layers.Layer):
+    def __init__(self, *args, **kwargs):
+        super(PartialConv, self).__init__(*args, **kwargs)
+        self.kernel = None
+        self.kernel_mask = None
+
+    def build(self, input_shape):
+        self.kernel = self.add_weight(name='kernel', shape=(self.kernel_size[0], self.kernel_size[1], input_shape[-1], self.filters), initializer='glorot_uniform', trainable=True)
+        self.kernel_mask = tf.ones((self.kernel_size[0], self.kernel_size[1], input_shape[-1], self.filters))
+        super(PartialConv, self).build(input_shape)
+
+    def call(self, inputs, mask=None):
+        if mask is None:
+            mask = K.ones_like(inputs)
+
+        outputs = K.conv2d(inputs * mask, self.kernel, padding=self.padding, strides=self.strides)
+        outputs_mask = K.conv2d(mask, self.kernel_mask, padding=self.padding, strides=self.strides)
+
+        mask_ratio = self.kernel_size[0] * self.kernel_size[1] / (outputs_mask + 1e-8)
+        outputs = outputs * mask_ratio
+        outputs_mask = K.clip(outputs_mask, 0, 1)
+
+        return outputs, outputs_mask
+
+    def compute_output_shape(self, input_shape):
+        space = input_shape[1:-1]
+        new_space = []
+        for i in range(len(space)):
+            new_dim = conv_utils.conv_output_length(space[i], self.kernel_size[i], padding=self.padding, stride=self.strides[i])
+            new_space.append(new_dim)
+        return (input_shape[0],) + tuple(new_space) + (self.filters,), (input_shape[0],) + tuple(new_space) + (self.filters,)
+
+def build_partialconv_autoencoder(input_shape=(256, 256, 3)):
+    inputs = tf.keras.Input(input_shape)
+    mask = tf.keras.Input(input_shape)
+
+    # Encoder
+    conv1, mask1 = PartialConv(64, kernel_size=3, strides=2, padding='same')([inputs, mask])
+    conv2, mask2 = PartialConv(128, kernel_size=3, strides=2, padding='same')([conv1, mask1])
+    conv3, mask3 = PartialConv(256, kernel_size=3, strides=2, padding='same')([conv2, mask2])
+
+    # Bottleneck
+    bottleneck, mask_bottleneck = PartialConv(512, kernel_size=3, strides=2, padding='same')([conv3, mask3])
+
+    # Decoder
+    deconv1, mask_deconv1 = PartialConv(256, kernel_size=3, strides=2, padding='same', transpose=True)([bottleneck, mask_bottleneck])
+    deconv2, mask_deconv2 = PartialConv(128, kernel_size=3, strides=2, padding='same', transpose=True)([deconv1, mask_deconv1])
+    deconv3, mask_deconv3 = PartialConv(64, kernel_size=3, strides=2, padding='same', transpose=True)([deconv2, mask_deconv2])
+    outputs, mask_outputs = PartialConv(3, kernel_size=3, strides=2, padding='same', transpose=True)([deconv3, mask_deconv3])
+
+    return models.Model([inputs, mask], [outputs, mask_outputs])
+
+# Define the model
+input_shape = (256, 256, 3)
+partialconv_autoencoder = build_partialconv_autoencoder(input_shape)
+partialconv_autoencoder.compile(optimizer='adam', loss='binary_crossentropy')
+
+# Example usage with a dummy dataset
+# Note: For real usage, replace this with actual data loading and preprocessing
+import numpy as np
+
+# Dummy dataset
+X_train = np.random.rand(100, 256, 256, 3)
+mask_train = np.random.randint(2, size=(100, 256, 256, 3))
+
+# Train the model
+partialconv_autoencoder.fit([X_train, mask_train], [X_train, mask_train], epochs=50, batch_size=8)
+
+# Use the trained model to fix broken images
+def fix_broken_image(partialconv_autoencoder, image_path, mask_path, output_path):
+    image = cv2.imread(image_path)
+    mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+    mask = cv2.resize(mask, (256, 256))
+    mask = np.expand_dims(mask, axis=-1)
+    mask = np.repeat(mask, 3, axis=-1)
+    mask = mask / 255.0
+
+    image_resized = cv2.resize(image, (256, 256))
+    image_normalized = image_resized / 255.0
+    image_input = np.expand_dims(image_normalized, axis=0)
+    mask_input = np.expand_dims(mask, axis=0)
+
+    fixed_image, _ = partialconv_autoencoder.predict([image_input, mask_input])[0]
+    fixed_image = (fixed_image * 255).astype(np.uint8)
+    fixed_image_resized = cv2.resize(fixed_image, (image.shape[1], image.shape[0]))
+
+    cv2.imwrite(output_path, fixed_image_resized)
+    cv2.imshow('Fixed Image', fixed_image_resized)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Paths to the broken image and mask
+broken_image_path = 'path_to_broken_image.png'
+mask_image_path = 'path_to_mask_image.png'
+output_image_path = 'path_to_fixed_image.png'
+
+# Fix the broken image
+fix_broken_image(partialconv_autoencoder, broken_image_path, mask_image_path, output_image_path)
+
+
+##---
