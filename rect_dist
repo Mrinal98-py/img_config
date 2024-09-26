@@ -1,0 +1,76 @@
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.spatial import distance
+
+# Function to detect rectangles in an image
+def detect_rectangles(image, num_rectangles=2):
+    # Convert the image to grayscale
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    
+    # Apply GaussianBlur to reduce noise and improve contour detection
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    
+    # Threshold the image to get a binary image
+    _, binary = cv2.threshold(blurred, 128, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    
+    # Find contours in the binary image
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    # Filter the contours to find rectangles
+    rectangles = []
+    for cnt in contours:
+        approx = cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)
+        if len(approx) == 4:  # Contour with 4 vertices is a rectangle
+            rectangles.append(approx)
+    
+    # Sort rectangles by area (largest to smallest) and take the top num_rectangles
+    rectangles = sorted(rectangles, key=cv2.contourArea, reverse=True)[:num_rectangles]
+    
+    return rectangles
+
+# Function to calculate the centroid of a rectangle
+def calculate_centroid(rect):
+    M = cv2.moments(rect)
+    cX = int(M["m10"] / M["m00"])
+    cY = int(M["m01"] / M["m00"])
+    return (cX, cY)
+
+# Function to calculate the distance between two points
+def calculate_distance(point1, point2):
+    return distance.euclidean(point1, point2)
+
+# Load an example image
+img_path = 'path_to_your_image.png'
+image = cv2.imread(img_path)
+
+# Check if the image was loaded properly
+if image is None:
+    print("Error: Unable to load image. Please check the image path or URL.")
+else:
+    # Detect rectangles in the image
+    rectangles = detect_rectangles(image)
+    
+    if len(rectangles) < 2:
+        print("Error: Less than two rectangles detected.")
+    else:
+        # Calculate centroids of the two largest rectangles
+        centroid1 = calculate_centroid(rectangles[0])
+        centroid2 = calculate_centroid(rectangles[1])
+        
+        # Calculate the distance between the centroids
+        dist = calculate_distance(centroid1, centroid2)
+        print(f"Distance between the two largest rectangles: {dist} pixels")
+        
+        # Draw the detected rectangles and centroids on the image
+        for rect in rectangles:
+            cv2.drawContours(image, [rect], -1, (0, 255, 0), 3)
+        cv2.circle(image, centroid1, 5, (255, 0, 0), -1)
+        cv2.circle(image, centroid2, 5, (255, 0, 0), -1)
+        
+        # Display the results
+        plt.figure(figsize=(10, 10))
+        plt.title('Detected Rectangles and Centroids')
+        plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        plt.axis('off')
+        plt.show()
