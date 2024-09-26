@@ -1,0 +1,89 @@
+pip install tensorflow numpy opencv-python
+
+##--
+import tensorflow as tf
+from tensorflow.keras.layers import Conv2D, Conv2DTranspose, LeakyReLU, ReLU, BatchNormalization, Input
+from tensorflow.keras.models import Model
+import numpy as np
+import cv2
+
+def build_edge_generator(input_shape=(256, 256, 1)):
+    inputs = Input(shape=input_shape)
+    x = Conv2D(64, kernel_size=3, strides=1, padding='same')(inputs)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2D(128, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2D(256, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2DTranspose(128, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = Conv2DTranspose(64, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = Conv2D(1, kernel_size=3, strides=1, padding='same', activation='sigmoid')(x)
+    return Model(inputs, x)
+
+def build_inpainting_network(input_shape=(256, 256, 1)):
+    inputs = Input(shape=input_shape)
+    x = Conv2D(64, kernel_size=3, strides=1, padding='same')(inputs)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2D(128, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2D(256, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = LeakyReLU(alpha=0.2)(x)
+    x = Conv2DTranspose(128, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = Conv2DTranspose(64, kernel_size=3, strides=2, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = ReLU()(x)
+    x = Conv2D(1, kernel_size=3, strides=1, padding='same', activation='sigmoid')(x)
+    return Model(inputs, x)
+
+def edgeconnect_inpainting(broken_image_path, output_image_path):
+    # Load and preprocess the broken image
+    broken_image = cv2.imread(broken_image_path, cv2.IMREAD_GRAYSCALE)
+    broken_image = cv2.resize(broken_image, (256, 256))
+    broken_image = broken_image / 255.0
+    broken_image = np.expand_dims(broken_image, axis=(0, -1))
+
+    # Build and compile the edge generator
+    edge_generator = build_edge_generator()
+    edge_generator.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    # Train the edge generator with dummy data (Replace with actual data)
+    X_train = np.random.rand(100, 256, 256, 1)
+    y_train = np.random.rand(100, 256, 256, 1)
+    edge_generator.fit(X_train, y_train, epochs=50, batch_size=8)
+
+    # Generate the edges
+    predicted_edges = edge_generator.predict(broken_image)
+
+    # Build and compile the inpainting network
+    inpainting_network = build_inpainting_network()
+    inpainting_network.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+
+    # Train the inpainting network with dummy data (Replace with actual data)
+    inpainting_network.fit(X_train, y_train, epochs=50, batch_size=8)
+
+    # Inpaint the image using the predicted edges
+    inpainted_image = inpainting_network.predict(predicted_edges)
+
+    # Post-process and save the inpainted image
+    inpainted_image = (inpainted_image.squeeze() * 255).astype(np.uint8)
+    cv2.imwrite(output_image_path, inpainted_image)
+    cv2.imshow('Inpainted Image', inpainted_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Path to the broken image
+broken_image_path = 'path_to_broken_image.png'
+output_image_path = 'path_to_inpainted_image.png'
+
+# Perform EdgeConnect inpainting
+edgeconnect_inpainting(broken_image_path, output_image_path)
